@@ -7,7 +7,7 @@ pipeline-build-amd64:
 		&& ./package.sh amd64/rezolus.tar.gz target/release/rezolus \
 
 pipeline-build-arm64v8:
-	/sbin/bpftool btf dump file /sys/kernel/btf/vmlinux format c > src/common/bpf/vmlinux.h \
+	/usr/local/bin/bpftool btf dump file /sys/kernel/btf/vmlinux format c > src/common/bpf/vmlinux.h \
 		&& cargo build --release --features bpf \
 		&& ./package.sh arm64v8/rezolus.tar.gz target/release/rezolus \
 
