@@ -1,5 +1,19 @@
 ## [Unreleased]
 
+## [3.3.2] - 2023-08-08
+
+### Fixed
+
+- Fixed hardware info and cpu samplers on platforms which do not expose either
+  die or node information in the topology, which may happen on ARM.
+- Fixed BPF program generation to restore compatibility with clang 11.
+
+## [3.3.1] - 2023-08-07
+
+### Fixed
+
+- Fixed path inconsistency in Debian packaging.
+
 ## [3.3.0] - 2023-08-02
 
 ### Added
@@ -33,7 +47,9 @@
 - Rewritten implementation of Rezolus using libbpf-rs and perf-event2 to provide
   a more modern approach to BPF and Perf Event instrumentation. 
 
-[unreleased]: https://github.com/iopsystems/rezolus/compare/v3.3.0...HEAD
+[unreleased]: https://github.com/iopsystems/rezolus/compare/v3.3.2...HEAD
+[3.3.2]: https://github.com/iopsystems/rezolus/compare/v3.3.1...v3.3.2
+[3.3.1]: https://github.com/iopsystems/rezolus/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/iopsystems/rezolus/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/iopsystems/rezolus/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/iopsystems/rezolus/compare/v3.0.0...v3.1.0
