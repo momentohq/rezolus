@@ -28,6 +28,8 @@ fn init(config: &Config) -> Box<dyn Sampler> {
     }
 }
 
+const NAME: &str = "cpu_perf";
+
 pub struct Perf {
     prev: Instant,
     next: Instant,
@@ -37,7 +39,12 @@ pub struct Perf {
 }
 
 impl Perf {
-    pub fn new(_config: &Config) -> Result<Self, ()> {
+    pub fn new(config: &Config) -> Result<Self, ()> {
+        // check if sampler should be enabled
+        if !config.enabled(NAME) {
+            return Err(());
+        }
+
         let now = Instant::now();
 
         let cpus = match hardware_info() {
@@ -90,7 +97,7 @@ impl Perf {
         return Ok(Self {
             prev: now,
             next: now,
-            interval: Duration::from_millis(10),
+            interval: config.interval(NAME),
             groups,
             counters,
         });
@@ -122,9 +129,9 @@ impl Sampler for Perf {
                 avg_ipus += reading.ipus;
                 avg_base_frequency += reading.base_frequency_mhz;
                 avg_running_frequency += reading.running_frequency_mhz;
-                let _ = CPU_IPKC_HEATMAP.increment(now, reading.ipkc);
-                let _ = CPU_IPUS_HEATMAP.increment(now, reading.ipus);
-                let _ = CPU_FREQUENCY_HEATMAP.increment(now, reading.running_frequency_mhz);
+                let _ = CPU_IPKC_HISTOGRAM.increment(reading.ipkc);
+                let _ = CPU_IPUS_HISTOGRAM.increment(reading.ipus);
+                let _ = CPU_FREQUENCY_HISTOGRAM.increment(reading.running_frequency_mhz);
 
                 self.counters[reading.id][0].set(reading.cycles);
                 self.counters[reading.id][1].set(reading.instructions);

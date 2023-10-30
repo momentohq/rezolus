@@ -11,6 +11,8 @@ mod bpf {
     include!(concat!(env!("OUT_DIR"), "/syscall_latency.bpf.rs"));
 }
 
+const NAME: &str = "syscall_latency";
+
 use bpf::*;
 
 use super::stats::*;
@@ -44,7 +46,12 @@ pub struct Syscall {
 }
 
 impl Syscall {
-    pub fn new(_config: &Config) -> Result<Self, ()> {
+    pub fn new(config: &Config) -> Result<Self, ()> {
+        // check if sampler should be enabled
+        if !config.enabled(NAME) {
+            return Err(());
+        }
+
         let builder = ModSkelBuilder::default();
         let mut skel = builder
             .open()
@@ -109,30 +116,39 @@ impl Syscall {
         let _ = syscall_lut.flush();
 
         let counters = vec![
-            Counter::new(&SYSCALL_TOTAL, Some(&SYSCALL_TOTAL_HEATMAP)),
-            Counter::new(&SYSCALL_READ, Some(&SYSCALL_READ_HEATMAP)),
-            Counter::new(&SYSCALL_WRITE, Some(&SYSCALL_WRITE_HEATMAP)),
-            Counter::new(&SYSCALL_POLL, Some(&SYSCALL_POLL_HEATMAP)),
-            Counter::new(&SYSCALL_LOCK, Some(&SYSCALL_LOCK_HEATMAP)),
-            Counter::new(&SYSCALL_TIME, Some(&SYSCALL_TIME_HEATMAP)),
-            Counter::new(&SYSCALL_SLEEP, Some(&SYSCALL_SLEEP_HEATMAP)),
-            Counter::new(&SYSCALL_SOCKET, Some(&SYSCALL_SOCKET_HEATMAP)),
+            Counter::new(&SYSCALL_TOTAL, Some(&SYSCALL_TOTAL_HISTOGRAM)),
+            Counter::new(&SYSCALL_READ, Some(&SYSCALL_READ_HISTOGRAM)),
+            Counter::new(&SYSCALL_WRITE, Some(&SYSCALL_WRITE_HISTOGRAM)),
+            Counter::new(&SYSCALL_POLL, Some(&SYSCALL_POLL_HISTOGRAM)),
+            Counter::new(&SYSCALL_LOCK, Some(&SYSCALL_LOCK_HISTOGRAM)),
+            Counter::new(&SYSCALL_TIME, Some(&SYSCALL_TIME_HISTOGRAM)),
+            Counter::new(&SYSCALL_SLEEP, Some(&SYSCALL_SLEEP_HISTOGRAM)),
+            Counter::new(&SYSCALL_SOCKET, Some(&SYSCALL_SOCKET_HISTOGRAM)),
         ];
 
         bpf.add_counters("counters", counters);
 
-        let mut distributions = vec![("total_latency", &SYSCALL_TOTAL_LATENCY)];
+        let mut distributions = vec![
+            ("total_latency", &SYSCALL_TOTAL_LATENCY),
+            ("read_latency", &SYSCALL_READ_LATENCY),
+            ("write_latency", &SYSCALL_WRITE_LATENCY),
+            ("poll_latency", &SYSCALL_POLL_LATENCY),
+            ("lock_latency", &SYSCALL_LOCK_LATENCY),
+            ("time_latency", &SYSCALL_TIME_LATENCY),
+            ("sleep_latency", &SYSCALL_SLEEP_LATENCY),
+            ("socket_latency", &SYSCALL_SOCKET_LATENCY),
+        ];
 
-        for (name, heatmap) in distributions.drain(..) {
-            bpf.add_distribution(name, heatmap);
+        for (name, histogram) in distributions.drain(..) {
+            bpf.add_distribution(name, histogram);
         }
 
         Ok(Self {
             bpf,
-            counter_interval: Duration::from_millis(10),
+            counter_interval: config.interval(NAME),
             counter_next: Instant::now(),
             counter_prev: Instant::now(),
-            distribution_interval: Duration::from_millis(50),
+            distribution_interval: config.distribution_interval(NAME),
             distribution_next: Instant::now(),
             distribution_prev: Instant::now(),
         })
@@ -145,7 +161,7 @@ impl Syscall {
 
         let elapsed = (now - self.counter_prev).as_secs_f64();
 
-        self.bpf.refresh_counters(now, elapsed);
+        self.bpf.refresh_counters(elapsed);
 
         // determine when to sample next
         let next = self.counter_next + self.counter_interval;
@@ -166,7 +182,7 @@ impl Syscall {
             return;
         }
 
-        self.bpf.refresh_distributions(now);
+        self.bpf.refresh_distributions();
 
         // determine when to sample next
         let next = self.distribution_next + self.distribution_interval;

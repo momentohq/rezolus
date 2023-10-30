@@ -10,10 +10,14 @@ fn init(config: &Config) -> Box<dyn Sampler> {
     // if we have bpf enabled, we don't need to run this sampler at all
     if config.bpf() {
         Box::new(Nop::new(config))
+    } else if let Ok(s) = Snmp::new(config) {
+        Box::new(s)
     } else {
-        Box::new(Snmp::new(config))
+        Box::new(Nop::new(config))
     }
 }
+
+const NAME: &str = "tcp_snmp";
 
 pub struct Snmp {
     prev: Instant,
@@ -24,29 +28,34 @@ pub struct Snmp {
 }
 
 impl Snmp {
-    pub fn new(_config: &Config) -> Self {
+    pub fn new(config: &Config) -> Result<Self, ()> {
+        // check if sampler should be enabled
+        if !config.enabled(NAME) {
+            return Err(());
+        }
+
         let now = Instant::now();
 
         let counters = vec![
             (
-                Counter::new(&TCP_RX_SEGMENTS, Some(&TCP_RX_SEGMENTS_HEATMAP)),
+                Counter::new(&TCP_RX_SEGMENTS, Some(&TCP_RX_SEGMENTS_HISTOGRAM)),
                 "Tcp:",
                 "InSegs",
             ),
             (
-                Counter::new(&TCP_TX_SEGMENTS, Some(&TCP_TX_SEGMENTS_HEATMAP)),
+                Counter::new(&TCP_TX_SEGMENTS, Some(&TCP_TX_SEGMENTS_HISTOGRAM)),
                 "Tcp:",
                 "OutSegs",
             ),
         ];
 
-        Self {
+        Ok(Self {
             file: File::open("/proc/net/snmp").expect("file not found"),
             counters,
             prev: now,
             next: now,
-            interval: Duration::from_millis(10),
-        }
+            interval: config.interval(NAME),
+        })
     }
 }
 
@@ -63,7 +72,7 @@ impl Sampler for Snmp {
         if let Ok(nested_map) = NestedMap::try_from_procfs(&mut self.file) {
             for (counter, pkey, lkey) in self.counters.iter_mut() {
                 if let Some(curr) = nested_map.get(pkey, lkey) {
-                    counter.set(now, elapsed, curr);
+                    counter.set(elapsed, curr);
                 }
             }
         }

@@ -11,6 +11,8 @@ mod bpf {
     include!(concat!(env!("OUT_DIR"), "/scheduler_runqueue.bpf.rs"));
 }
 
+const NAME: &str = "scheduler_runqueue";
+
 use bpf::*;
 
 use super::stats::*;
@@ -45,7 +47,12 @@ pub struct Runqlat {
 }
 
 impl Runqlat {
-    pub fn new(_config: &Config) -> Result<Self, ()> {
+    pub fn new(config: &Config) -> Result<Self, ()> {
+        // check if sampler should be enabled
+        if !config.enabled(NAME) {
+            return Err(());
+        }
+
         let builder = ModSkelBuilder::default();
         let mut skel = builder
             .open()
@@ -67,16 +74,16 @@ impl Runqlat {
             ("running", &SCHEDULER_RUNNING),
         ];
 
-        for (name, heatmap) in distributions.drain(..) {
-            bpf.add_distribution(name, heatmap);
+        for (name, histogram) in distributions.drain(..) {
+            bpf.add_distribution(name, histogram);
         }
 
         Ok(Self {
             bpf,
-            counter_interval: Duration::from_millis(10),
+            counter_interval: config.interval(NAME),
             counter_next: Instant::now(),
             counter_prev: Instant::now(),
-            distribution_interval: Duration::from_millis(50),
+            distribution_interval: config.distribution_interval(NAME),
             distribution_next: Instant::now(),
             distribution_prev: Instant::now(),
         })
@@ -89,7 +96,7 @@ impl Runqlat {
 
         let elapsed = (now - self.counter_prev).as_secs_f64();
 
-        self.bpf.refresh_counters(now, elapsed);
+        self.bpf.refresh_counters(elapsed);
 
         // determine when to sample next
         let next = self.counter_next + self.counter_interval;
@@ -110,7 +117,7 @@ impl Runqlat {
             return;
         }
 
-        self.bpf.refresh_distributions(now);
+        self.bpf.refresh_distributions();
 
         // determine when to sample next
         let next = self.distribution_next + self.distribution_interval;

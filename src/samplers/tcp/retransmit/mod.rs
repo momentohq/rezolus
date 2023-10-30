@@ -11,6 +11,8 @@ mod bpf {
     include!(concat!(env!("OUT_DIR"), "/tcp_retransmit.bpf.rs"));
 }
 
+const NAME: &str = "tcp_retransmit";
+
 use bpf::*;
 
 use super::stats::*;
@@ -40,7 +42,12 @@ pub struct Retransmit {
 }
 
 impl Retransmit {
-    pub fn new(_config: &Config) -> Result<Self, ()> {
+    pub fn new(config: &Config) -> Result<Self, ()> {
+        // check if sampler should be enabled
+        if !config.enabled(NAME) {
+            return Err(());
+        }
+
         let builder = ModSkelBuilder::default();
         let mut skel = builder
             .open()
@@ -55,17 +62,17 @@ impl Retransmit {
 
         let counters = vec![Counter::new(
             &TCP_TX_RETRANSMIT,
-            Some(&TCP_TX_RETRANSMIT_HEATMAP),
+            Some(&TCP_TX_RETRANSMIT_HISTOGRAM),
         )];
 
         bpf.add_counters("counters", counters);
 
         Ok(Self {
             bpf,
-            counter_interval: Duration::from_millis(10),
+            counter_interval: config.interval(NAME),
             counter_next: Instant::now(),
             counter_prev: Instant::now(),
-            distribution_interval: Duration::from_millis(50),
+            distribution_interval: config.distribution_interval(NAME),
             distribution_next: Instant::now(),
             distribution_prev: Instant::now(),
         })
@@ -78,7 +85,7 @@ impl Retransmit {
 
         let elapsed = (now - self.counter_prev).as_secs_f64();
 
-        self.bpf.refresh_counters(now, elapsed);
+        self.bpf.refresh_counters(elapsed);
 
         // determine when to sample next
         let next = self.counter_next + self.counter_interval;
@@ -99,7 +106,7 @@ impl Retransmit {
             return;
         }
 
-        self.bpf.refresh_distributions(now);
+        self.bpf.refresh_distributions();
 
         // determine when to sample next
         let next = self.distribution_next + self.distribution_interval;

@@ -1,17 +1,20 @@
-// use crate::common::Noop;
 use super::stats::*;
 use super::*;
-use crate::common::Counter;
+use crate::common::{Counter, Nop};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Read;
-use std::io::Seek;
+use std::io::{Read, Seek};
 
-#[cfg(target_os = "linux")]
 #[distributed_slice(MEMORY_SAMPLERS)]
 fn init(config: &Config) -> Box<dyn Sampler> {
-    Box::new(ProcVmstat::new(config))
+    if let Ok(s) = ProcVmstat::new(config) {
+        Box::new(s)
+    } else {
+        Box::new(Nop {})
+    }
 }
+
+const NAME: &str = "memory_vmstat";
 
 pub struct ProcVmstat {
     prev: Instant,
@@ -23,7 +26,12 @@ pub struct ProcVmstat {
 
 impl ProcVmstat {
     #[allow(dead_code)]
-    pub fn new(_config: &Config) -> Self {
+    pub fn new(config: &Config) -> Result<Self, ()> {
+        // check if sampler should be enabled
+        if !config.enabled(NAME) {
+            return Err(());
+        }
+
         let now = Instant::now();
 
         let counters = HashMap::from([
@@ -38,13 +46,13 @@ impl ProcVmstat {
             ("numa_other", Counter::new(&MEMORY_NUMA_OTHER, None)),
         ]);
 
-        Self {
+        Ok(Self {
             file: File::open("/proc/vmstat").expect("file not found"),
             counters,
             prev: now,
             next: now,
-            interval: Duration::from_millis(10),
-        }
+            interval: config.interval(NAME),
+        })
     }
 }
 
@@ -58,7 +66,7 @@ impl Sampler for ProcVmstat {
 
         let elapsed = (now - self.prev).as_secs_f64();
 
-        if self.sample_proc_vmstat(now, elapsed).is_err() {
+        if self.sample_proc_vmstat(elapsed).is_err() {
             return;
         }
 
@@ -80,7 +88,7 @@ impl Sampler for ProcVmstat {
 }
 
 impl ProcVmstat {
-    fn sample_proc_vmstat(&mut self, now: Instant, elapsed: f64) -> Result<(), std::io::Error> {
+    fn sample_proc_vmstat(&mut self, elapsed: f64) -> Result<(), std::io::Error> {
         self.file.rewind()?;
 
         let mut data = String::new();
@@ -97,7 +105,7 @@ impl ProcVmstat {
 
             if let Some(counter) = self.counters.get_mut(*parts.first().unwrap()) {
                 if let Some(Ok(v)) = parts.get(1).map(|v| v.parse::<u64>()) {
-                    counter.set(now, elapsed, v);
+                    counter.set(elapsed, v);
                 }
             }
         }
