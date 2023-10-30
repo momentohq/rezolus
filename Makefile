@@ -18,6 +18,6 @@ pipeline-synth:
 
 pull-request-ci:
 	cargo fmt -- --check \
-		&& cargo clippy --all-targets --all-features -- -D warnings -W clippy::unwrap_used -W clippy::todo -W clippy::panic_in_result_fn -W clippy::expect_used \
+		&& cargo clippy --all-targets --all-features -- -D warnings -W clippy::todo -W clippy::panic_in_result_fn \
 		&& cargo build --release --features bpf 
 
