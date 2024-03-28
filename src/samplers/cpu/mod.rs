@@ -2,9 +2,17 @@ use crate::*;
 
 sampler!(Cpu, "cpu", CPU_SAMPLERS);
 
-mod stats;
+#[cfg(target_os = "macos")]
+mod macos;
 
 #[cfg(target_os = "linux")]
-mod perf;
+mod linux;
 
-mod proc_stat;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod stats;
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub use stats::*;
+
+#[cfg(target_os = "linux")]
+pub use linux::stats::*;

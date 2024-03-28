@@ -1,173 +1,69 @@
-use crate::*;
-use metriken::{metric, Counter, Format, Gauge, LazyCounter, LazyGauge, MetricEntry};
-
-#[metric(
-    name = "cpu/cores",
-    description = "The total number of logical cores that are currently online"
-)]
-pub static CPU_CORES: LazyGauge = LazyGauge::new(Gauge::default);
+use crate::common::HISTOGRAM_GROUPING_POWER;
+use metriken::{metric, AtomicHistogram, Counter, Format, LazyCounter, MetricEntry};
 
 #[metric(
     name = "cpu/usage",
     description = "The amount of CPU time spent executing normal tasks is user mode",
     formatter = cpu_metric_formatter,
-    metadata = { state = "user" }
+    metadata = { state = "user", unit = "nanoseconds" }
 )]
 pub static CPU_USAGE_USER: LazyCounter = LazyCounter::new(Counter::default);
 
-heatmap!(CPU_USAGE_USER_HEATMAP, "cpu/usage/user");
+#[metric(
+    name = "cpu/usage/user",
+    description = "Distribution of rate of CPU usage across the past snapshot interval",
+    metadata = { unit = "nanoseconds/second" }
+)]
+pub static CPU_USAGE_USER_HISTOGRAM: AtomicHistogram =
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
 
 #[metric(
     name = "cpu/usage",
     description = "The amount of CPU time spent executing low priority tasks in user mode",
     formatter = cpu_metric_formatter,
-    metadata = { state = "nice" }
+    metadata = { state = "nice", unit = "nanoseconds" }
 )]
 pub static CPU_USAGE_NICE: LazyCounter = LazyCounter::new(Counter::default);
 
-heatmap!(CPU_USAGE_NICE_HEATMAP, "cpu/usage/nice");
+#[metric(
+    name = "cpu/usage/nice",
+    description = "Distribution of rate of CPU usage across the past snapshot interval",
+    metadata = { unit = "nanoseconds/second" }
+)]
+pub static CPU_USAGE_NICE_HISTOGRAM: AtomicHistogram =
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
 
 #[metric(
     name = "cpu/usage",
     description = "The amount of CPU time spent executing tasks in kernel mode",
     formatter = cpu_metric_formatter,
-    metadata = { state = "system" }
+    metadata = { state = "system", unit = "nanoseconds" }
 )]
 pub static CPU_USAGE_SYSTEM: LazyCounter = LazyCounter::new(Counter::default);
 
-heatmap!(CPU_USAGE_SYSTEM_HEATMAP, "cpu/usage/system");
+#[metric(
+    name = "cpu/usage/system",
+    description = "Distribution of rate of CPU usage across the past snapshot interval",
+    metadata = { unit = "nanoseconds/second" }
+)]
+pub static CPU_USAGE_SYSTEM_HISTOGRAM: AtomicHistogram =
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
 
 #[metric(
     name = "cpu/usage",
     description = "The amount of CPU time spent idle",
     formatter = cpu_metric_formatter,
-    metadata = { state = "idle" }
+    metadata = { state = "idle", unit = "nanoseconds" }
 )]
 pub static CPU_USAGE_IDLE: LazyCounter = LazyCounter::new(Counter::default);
 
-heatmap!(CPU_USAGE_IDLE_HEATMAP, "cpu/usage/idle");
-
 #[metric(
-    name = "cpu/usage",
-    description = "The amount of CPU time spent waiting for IO to complete",
-    formatter = cpu_metric_formatter,
-    metadata = { state = "io_wait" }
+    name = "cpu/usage/idle",
+    description = "Distribution of rate of CPU usage across the past snapshot interval",
+    metadata = { unit = "nanoseconds/second" }
 )]
-pub static CPU_USAGE_IO_WAIT: LazyCounter = LazyCounter::new(Counter::default);
-
-heatmap!(CPU_USAGE_IO_WAIT_HEATMAP, "cpu/usage/io_wait");
-
-#[metric(
-    name = "cpu/usage",
-    description = "The amount of CPU time spent servicing interrupts",
-    formatter = cpu_metric_formatter,
-    metadata = { state = "irq" }
-)]
-pub static CPU_USAGE_IRQ: LazyCounter = LazyCounter::new(Counter::default);
-
-heatmap!(CPU_USAGE_IRQ_HEATMAP, "cpu/usage/irq");
-
-#[metric(
-    name = "cpu/usage",
-    description = "The amount of CPU time spent servicing softirqs",
-    formatter = cpu_metric_formatter,
-    metadata = { state = "softirq" }
-)]
-pub static CPU_USAGE_SOFTIRQ: LazyCounter = LazyCounter::new(Counter::default);
-
-heatmap!(CPU_USAGE_SOFTIRQ_HEATMAP, "cpu/usage/softirq");
-
-#[metric(
-    name = "cpu/usage",
-    description = "The amount of CPU time stolen by the hypervisor",
-    formatter = cpu_metric_formatter,
-    metadata = { state = "steal" }
-)]
-pub static CPU_USAGE_STEAL: LazyCounter = LazyCounter::new(Counter::default);
-
-heatmap!(CPU_USAGE_STEAL_HEATMAP, "cpu/usage/steal");
-
-#[metric(
-    name = "cpu/usage",
-    description = "The amount of CPU time spent running a virtual CPU for a guest",
-    formatter = cpu_metric_formatter,
-    metadata = { state = "guest" }
-)]
-pub static CPU_USAGE_GUEST: LazyCounter = LazyCounter::new(Counter::default);
-
-heatmap!(CPU_USAGE_GUEST_HEATMAP, "cpu/usage/guest");
-
-#[metric(
-    name = "cpu/usage",
-    description = "The amount of CPU time spent running a virtual CPU for a guest in low priority mode",
-    formatter = cpu_metric_formatter,
-    metadata = { state = "guest_nice" }
-)]
-pub static CPU_USAGE_GUEST_NICE: LazyCounter = LazyCounter::new(Counter::default);
-
-heatmap!(CPU_USAGE_GUEST_NICE_HEATMAP, "cpu/usage/guest_nice");
-
-#[metric(
-    name = "cpu/cycles",
-    description = "The number of elapsed CPU cycles",
-    formatter = cpu_metric_formatter
-)]
-pub static CPU_CYCLES: LazyCounter = LazyCounter::new(Counter::default);
-
-#[metric(
-    name = "cpu/instructions",
-    description = "The number of instructions retired",
-    formatter = cpu_metric_formatter
-)]
-pub static CPU_INSTRUCTIONS: LazyCounter = LazyCounter::new(Counter::default);
-
-#[metric(
-    name = "cpu/perf_groups/active",
-    description = "The number of currently active perf event groups"
-)]
-pub static CPU_PERF_GROUPS_ACTIVE: LazyGauge = LazyGauge::new(Gauge::default);
-
-#[metric(
-    name = "cpu/ipkc/average",
-    description = "Average IPKC (instructions per thousand cycles): SUM(IPKC_CPU0...N)/N)"
-)]
-pub static CPU_IPKC_AVERAGE: LazyGauge = LazyGauge::new(Gauge::default);
-
-heatmap!(
-    CPU_IPKC_HEATMAP,
-    "cpu/ipkc",
-    "distribution of per-CPU IPKC (Instructions Per Thousand Cycles)"
-);
-
-#[metric(
-    name = "cpu/ipus/average",
-    description = "Average IPUS (instructions per microsecond): SUM(IPUS_CPU0...N)/N)"
-)]
-pub static CPU_IPUS_AVERAGE: LazyGauge = LazyGauge::new(Gauge::default);
-
-heatmap!(
-    CPU_IPUS_HEATMAP,
-    "cpu/ipus",
-    "Distribution of per-CPU IPUS (Instructions Per Microsecond)"
-);
-
-#[metric(
-    name = "cpu/base_frequency/average",
-    description = "Average base CPU frequency (MHz)"
-)]
-pub static CPU_BASE_FREQUENCY_AVERAGE: LazyGauge = LazyGauge::new(Gauge::default);
-
-#[metric(
-    name = "cpu/frequency/average",
-    description = "Average running CPU frequency (MHz): SUM(RUNNING_FREQUENCY_CPU0...N)/N"
-)]
-pub static CPU_FREQUENCY_AVERAGE: LazyGauge = LazyGauge::new(Gauge::default);
-
-heatmap!(
-    CPU_FREQUENCY_HEATMAP,
-    "cpu/frequency",
-    "Distribution of the per-CPU running frequencies"
-);
+pub static CPU_USAGE_IDLE_HISTOGRAM: AtomicHistogram =
+    AtomicHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
 
 /// A function to format the cpu metrics that allows for export of both total
 /// and per-CPU metrics.

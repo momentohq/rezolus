@@ -2,7 +2,8 @@ use crate::*;
 
 sampler!(Memory, "memory", MEMORY_SAMPLERS);
 
+#[cfg(target_os = "linux")]
 mod stats;
 
-mod proc_meminfo;
-mod proc_vmstat;
+#[cfg(target_os = "linux")]
+mod linux;
