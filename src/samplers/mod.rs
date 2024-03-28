@@ -3,6 +3,8 @@ mod cpu;
 mod gpu;
 pub mod hwinfo;
 mod memory;
+mod network;
+mod rezolus;
 mod scheduler;
 mod syscall;
 mod tcp;

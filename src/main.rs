@@ -2,10 +2,63 @@ use backtrace::Backtrace;
 use clap::{Arg, Command};
 use linkme::distributed_slice;
 use metriken::Lazy;
+use metriken_exposition::HistogramSnapshot;
 use ringlog::*;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::SystemTime;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 
-type Duration = clocksource::Duration<clocksource::Nanoseconds<u64>>;
-type Instant = clocksource::Instant<clocksource::Nanoseconds<u64>>;
+type HistogramSnapshots = HashMap<String, HistogramSnapshot>;
+
+static SNAPSHOTS: Lazy<Arc<RwLock<Snapshots>>> =
+    Lazy::new(|| Arc::new(RwLock::new(Snapshots::new())));
+
+pub struct Snapshots {
+    timestamp: SystemTime,
+    previous: HistogramSnapshots,
+    delta: HistogramSnapshots,
+}
+
+impl Default for Snapshots {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Snapshots {
+    pub fn new() -> Self {
+        let snapshot = metriken_exposition::Snapshotter::default().snapshot();
+
+        let previous: HistogramSnapshots = snapshot.histograms.into_iter().collect();
+        let delta = previous.clone();
+
+        Self {
+            timestamp: snapshot.systemtime,
+            previous,
+            delta,
+        }
+    }
+
+    pub fn update(&mut self) {
+        let snapshot = metriken_exposition::Snapshotter::default().snapshot();
+        self.timestamp = snapshot.systemtime;
+
+        let current: HistogramSnapshots = snapshot.histograms.into_iter().collect();
+        let mut delta = HistogramSnapshots::new();
+
+        for (name, previous) in &self.previous {
+            if let Some(histogram) = current.get(name).cloned() {
+                let _ = histogram.wrapping_sub(previous);
+                delta.insert(name.to_string(), histogram);
+            }
+        }
+
+        self.previous = current;
+        self.delta = delta;
+    }
+}
 
 mod common;
 mod config;
@@ -26,9 +79,6 @@ pub static PERCENTILES: &[(&str, f64)] = &[
 
 #[distributed_slice]
 pub static SAMPLERS: [fn(config: &Config) -> Box<dyn Sampler>] = [..];
-
-// #[distributed_slice]
-// pub static BPF_SAMPLERS: [fn(config: &Config) -> Box<dyn Sampler>] = [..];
 
 counter!(RUNTIME_SAMPLE_LOOP, "runtime/sample/loop");
 
@@ -54,11 +104,11 @@ fn main() {
         .get_matches();
 
     // load config from file
-    let config = {
+    let config: Arc<Config> = {
         let file = matches.get_one::<String>("CONFIG").unwrap();
         debug!("loading config: {}", file);
         match Config::load(file) {
-            Ok(c) => c,
+            Ok(c) => c.into(),
             Err(error) => {
                 eprintln!("error loading config file: {file}\n{error}");
                 std::process::exit(1);
@@ -68,19 +118,6 @@ fn main() {
 
     // configure debug log
     let debug_output: Box<dyn Output> = Box::new(Stderr::new());
-    // let debug_output: Box<dyn Output> = if let Some(file) = config.debug().log_file() {
-    //     let backup = config
-    //         .debug()
-    //         .log_backup()
-    //         .unwrap_or(format!("{}.old", file));
-    //     Box::new(
-    //         File::new(&file, &backup, config.debug().log_max_size())
-    //             .expect("failed to open debug log file"),
-    //     )
-    // } else {
-    //     // by default, log to stderr
-    //     Box::new(Stderr::new())
-    // };
 
     let level = Level::Info;
 
@@ -90,8 +127,6 @@ fn main() {
         LogBuilder::new()
     }
     .output(debug_output)
-    // .log_queue_depth(config.debug().log_queue_depth())
-    // .single_message_size(config.debug().log_single_message_size())
     .build()
     .expect("failed to initialize debug log");
 
@@ -116,10 +151,24 @@ fn main() {
         }
     });
 
+    // spawn thread to maintain histogram snapshots
+    rt.spawn(async {
+        loop {
+            // acquire a lock and update the snapshots
+            {
+                let mut snapshots = SNAPSHOTS.write().await;
+                snapshots.update();
+            }
+
+            // delay until next update
+            tokio::time::sleep(core::time::Duration::from_secs(1)).await;
+        }
+    });
+
     info!("rezolus");
 
     // spawn http exposition thread
-    rt.spawn(exposition::http());
+    rt.spawn(exposition::http(config.clone()));
 
     // initialize and gather the samplers
     let mut samplers: Vec<Box<dyn Sampler>> = Vec::new();
@@ -127,12 +176,6 @@ fn main() {
     for sampler in SAMPLERS {
         samplers.push(sampler(&config));
     }
-
-    // let mut bpf_samplers: Vec<Box<dyn Sampler>> = Vec::new();
-
-    // for sampler in BPF_SAMPLERS {
-    //     bpf_samplers.push(sampler(&config));
-    // }
 
     info!("initialization complete");
 
@@ -148,23 +191,14 @@ fn main() {
             sampler.sample();
         }
 
-        // calculate how long we took during this iteration
-        let stop = Instant::now();
-        let elapsed = (stop - start).as_nanos();
-
-        // calculate how long to sleep and sleep before next iteration
-        // this wakeup period allows a maximum of 1kHz sampling
-        let sleep = 1_000_000_u64.saturating_sub(elapsed);
-        std::thread::sleep(std::time::Duration::from_nanos(sleep));
+        // Sleep for the remainder of one millisecond minus the sampling time.
+        // This wakeup period allows a maximum of 1kHz sampling
+        let delay = Duration::from_millis(1).saturating_sub(start.elapsed());
+        std::thread::sleep(delay);
     }
 }
 
 pub trait Sampler {
-    // #[allow(clippy::result_unit_err)]
-    // fn configure(&self, config: &Config) -> Result<(), ()>;
-
     /// Do some sampling and updating of stats
     fn sample(&mut self);
-
-    // fn name(&self) -> &str;
 }

@@ -1,16 +1,9 @@
 use crate::*;
 
-sampler!(Tcp, "tcp", TCP_SAMPLERS);
+sampler!(Network, "network", NETWORK_SAMPLERS);
 
-mod stats;
+#[cfg(target_os = "linux")]
+pub(crate) mod stats;
 
-mod snmp;
-
-#[cfg(all(feature = "bpf", target_os = "linux"))]
-mod receive;
-
-#[cfg(all(feature = "bpf", target_os = "linux"))]
-mod retransmit;
-
-#[cfg(all(feature = "bpf", target_os = "linux"))]
-mod traffic;
+#[cfg(target_os = "linux")]
+mod linux;
