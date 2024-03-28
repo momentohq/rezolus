@@ -10,6 +10,8 @@ use std::time::SystemTime;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 type HistogramSnapshots = HashMap<String, HistogramSnapshot>;
 
 static SNAPSHOTS: Lazy<Arc<RwLock<Snapshots>>> =
@@ -50,8 +52,9 @@ impl Snapshots {
 
         for (name, previous) in &self.previous {
             if let Some(histogram) = current.get(name).cloned() {
-                let _ = histogram.wrapping_sub(previous);
-                delta.insert(name.to_string(), histogram);
+                if let Ok(d) = histogram.wrapping_sub(previous) {
+                    delta.insert(name.to_string(), d);
+                }
             }
         }
 
@@ -165,7 +168,7 @@ fn main() {
         }
     });
 
-    info!("rezolus");
+    info!("rezolus {VERSION}");
 
     // spawn http exposition thread
     rt.spawn(exposition::http(config.clone()));
