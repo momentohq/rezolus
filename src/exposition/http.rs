@@ -1,5 +1,4 @@
 use crate::{Arc, Config, PERCENTILES};
-use metriken::histogram::Snapshot;
 use metriken::{AtomicHistogram, Counter, Gauge, RwLockHistogram};
 use metriken_exposition::SnapshotterBuilder;
 use std::time::UNIX_EPOCH;
@@ -130,7 +129,7 @@ mod handlers {
                 if let Some(delta) = snapshots.delta.get(&simple_name) {
                     let percentiles: Vec<f64> = PERCENTILES.iter().map(|(_, p)| *p).collect();
 
-                    if let Ok(result) = delta.percentiles(&percentiles) {
+                    if let Ok(result) = delta.value.percentiles(&percentiles) {
                         for (percentile, value) in result.iter().map(|(p, b)| (p, b.end())) {
                             data.push(format!(
                                 "# TYPE {name} gauge\n{name}{{percentile=\"{:02}\"}} {value} {timestamp}",
@@ -140,23 +139,23 @@ mod handlers {
                     }
                 }
                 if config.prometheus().histograms() {
-                    if let Some(snapshot) = snapshots.previous.get(metric.name()) {
+                    if let Some(histogram) = snapshots.previous.get(metric.name()) {
                         let current = HISTOGRAM_GROUPING_POWER;
                         let target = config.prometheus().histogram_grouping_power();
 
-                        // downsample the snapshot if necessary
-                        let downsampled: Option<Snapshot> = if current == target {
+                        // downsample the histogram if necessary
+                        let downsampled: Option<histogram::Histogram> = if current == target {
                             // the powers matched, we don't need to downsample
                             None
                         } else {
-                            Some(snapshot.downsample(target).unwrap())
+                            Some(histogram.value.downsample(target).unwrap())
                         };
 
-                        // reassign to either use the downsampled snapshot or the original
-                        let snapshot = if let Some(snapshot) = downsampled.as_ref() {
-                            snapshot
+                        // reassign to either use the downsampled histogram or the original
+                        let histogram = if let Some(histogram) = downsampled.as_ref() {
+                            histogram
                         } else {
-                            snapshot
+                            &histogram.value
                         };
 
                         // we need to export a total count (free-running)
@@ -166,7 +165,7 @@ mod handlers {
                         let mut sum = 0;
 
                         let mut entry = format!("# TYPE {name}_distribution histogram\n");
-                        for bucket in snapshot {
+                        for bucket in histogram {
                             // add this bucket's sum of observations
                             sum += bucket.count() * bucket.end();
 
@@ -230,7 +229,7 @@ mod handlers {
                 if let Some(delta) = snapshots.delta.get(&simple_name) {
                     let percentiles: Vec<f64> = PERCENTILES.iter().map(|(_, p)| *p).collect();
 
-                    if let Ok(result) = delta.percentiles(&percentiles) {
+                    if let Ok(result) = delta.value.percentiles(&percentiles) {
                         for (value, label) in result
                             .iter()
                             .map(|(_, b)| b.end())
@@ -251,6 +250,8 @@ mod handlers {
 
     pub async fn msgpack() -> Result<impl warp::Reply, Infallible> {
         let snapshot = SnapshotterBuilder::new()
+            .metadata("source".to_string(), env!("CARGO_BIN_NAME").to_string())
+            .metadata("version".to_string(), env!("CARGO_PKG_VERSION").to_string())
             .filter(|metric| {
                 if let Some(m) = metric.as_any() {
                     if m.downcast_ref::<AtomicHistogram>().is_some() {
