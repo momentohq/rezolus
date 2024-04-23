@@ -1,8 +1,41 @@
 ## [Unreleased]
 
+## [3.14.2] - 2024-04-18
+
+## Fixed
+
+- CPU usage for soft and hard irq was incorrectly reported. (#236)
+
+## [3.14.1] - 2024-04-16
+
+## Fixed
+
+- CPU usage reporting via BPF would report CPU as always idle on some systems.
+  (#233)
+
+## [3.14.0] - 2024-04-03
+
+## Changed
+
+- metriken crates updated which changes the msgpack output. (#224)
+
+## Fixed
+
+- Dependency updates to address RUSTSEC-2024-0332.
+
+## [3.13.0] - 2024-04-01
+
+## Changed
+
+- Memory sampler was reporting memory usage stats in KiB, but with bytes for the
+  unit metadata. This change corrects the sampler to report memory usage in
+  bytes. This fix is disruptive as it will cause the memory stats to change.
+  (#222)
+
 ## [3.12.0] - 2024-03-28
 
 ## Added
+
 - MacOS cpu usage sampling. (#203)
 - Metric unit annotations are added and exposed as metadata.
 - Logs version number on startup. (#213)
@@ -197,7 +230,11 @@
 - Rewritten implementation of Rezolus using libbpf-rs and perf-event2 to provide
   a more modern approach to BPF and Perf Event instrumentation. 
 
-[unreleased]: https://github.com/iopsystems/rezolus/compare/v3.12.0...HEAD
+[unreleased]: https://github.com/iopsystems/rezolus/compare/v3.14.2...HEAD
+[3.14.2]: https://github.com/iopsystems/rezolus/compare/v3.14.1...v3.14.2
+[3.14.1]: https://github.com/iopsystems/rezolus/compare/v3.14.0...v3.14.1
+[3.14.0]: https://github.com/iopsystems/rezolus/compare/v3.13.0...v3.14.0
+[3.13.0]: https://github.com/iopsystems/rezolus/compare/v3.12.0...v3.13.0
 [3.12.0]: https://github.com/iopsystems/rezolus/compare/v3.11.0...v3.12.0
 [3.11.0]: https://github.com/iopsystems/rezolus/compare/v3.10.3...v3.11.0
 [3.10.3]: https://github.com/iopsystems/rezolus/compare/v3.10.2...v3.10.3
