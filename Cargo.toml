@@ -38,8 +38,19 @@ histogram = { version = "0.10.0", features = ["serde"] }
 chrono = { version = "0.4.33", features = ["serde"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libbpf-rs = { version = "0.21.2", optional = true }
-libbpf-sys = { version = "1.2.1", optional = true }
+# libbpf-sys version `1.4.0+v1.4.0` fails to compile on Amazon Linux 2 kernel 5.15
+# Both x86 and Arm builds fail with the same error and a newer kernel is not available.
+# Omitting extraneous output, the error boils down to
+#
+# In file included from libbpf.c:36:0:
+#    /usr/include/linux/bpf_perf_event.h:15:17: error: field 'regs' has incomplete type
+#      struct pt_regs regs;
+#
+# thread 'main' panicked at /root/.cargo/registry/src/index.crates.io-6f17d22bba15001f/libbpf-sys-1.4.0+v1.4.0/build.rs:342:5:
+#  make failed
+# Hence we pin the versions of libbpf-sys and libbpf-rs
+libbpf-rs = { version = "=0.21.2", optional = true }
+libbpf-sys = { version = "=1.2.1", optional = true }
 perf-event2 = "0.7.0"
 nvml-wrapper = "0.9.0"
 
