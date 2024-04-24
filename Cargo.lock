@@ -872,7 +872,7 @@ dependencies = [
  "lazy_static",
  "libbpf-sys",
  "libc",
- "nix 0.26.4",
+ "nix",
  "num_enum",
  "strum_macros",
  "thiserror",
@@ -881,12 +881,12 @@ dependencies = [
 
 [[package]]
 name = "libbpf-sys"
-version = "1.4.0+v1.4.0"
+version = "1.2.1+v1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4ee5f6d35341ad5d492fd92466c45ff11d6e8104ffa8208f62450875c93e258"
+checksum = "75adb4021282a72ca63ebbc0e4247750ad74ede68ff062d247691072d709ad8b"
 dependencies = [
  "cc",
- "nix 0.27.1",
+ "nix",
  "num_cpus",
  "pkg-config",
 ]
@@ -1114,17 +1114,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "memoffset",
-]
-
-[[package]]
-name = "nix"
-version = "0.27.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2eb04e9c688eff1c89d72b407f168cf79bb9e867a9d3323ed6c01519eb9cc053"
-dependencies = [
- "bitflags 2.4.2",
- "cfg-if",
- "libc",
+ "pin-utils",
 ]
 
 [[package]]
