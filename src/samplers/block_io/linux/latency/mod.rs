@@ -13,15 +13,12 @@ mod bpf {
 
 static NAME: &str = "block_io_latency";
 
-use metriken::MetricBuilder;
-
 use bpf::*;
 
 use crate::common::bpf::*;
 use crate::common::*;
 use crate::samplers::block_io::stats::*;
 use crate::samplers::block_io::*;
-use crate::samplers::hwinfo::hardware_info;
 
 impl GetMap for ModSkel<'_> {
     fn map(&self, name: &str) -> &libbpf_rs::Map {
@@ -50,7 +47,7 @@ pub struct Biolat {
 impl Biolat {
     pub fn new(config: &Config) -> Result<Self, ()> {
         // check if sampler should be enabled
-        if !config.enabled(NAME) {
+        if !(config.enabled(NAME) && config.bpf(NAME)) {
             return Err(());
         }
 
@@ -61,17 +58,21 @@ impl Biolat {
             .load()
             .map_err(|e| error!("failed to load bpf program: {e}"))?;
 
+        debug!(
+            "{NAME} block_rq_insert() BPF instruction count: {}",
+            skel.progs().block_rq_insert().insn_cnt()
+        );
+        debug!(
+            "{NAME} block_rq_issue() BPF instruction count: {}",
+            skel.progs().block_rq_issue().insn_cnt()
+        );
+        debug!(
+            "{NAME} block_rq_complete() BPF instruction count: {}",
+            skel.progs().block_rq_complete().insn_cnt()
+        );
+
         skel.attach()
             .map_err(|e| error!("failed to attach bpf program: {e}"))?;
-
-        let mut bpf = Bpf::from_skel(skel);
-
-        let mut distributions = vec![("latency", &BLOCKIO_LATENCY), ("size", &BLOCKIO_SIZE)];
-
-        let cpus = match hardware_info() {
-            Ok(hwinfo) => hwinfo.get_cpus(),
-            Err(_) => return Err(()),
-        };
 
         let counters = vec![
             Counter::new(&BLOCKIO_READ_OPS, Some(&BLOCKIO_READ_OPS_HISTOGRAM)),
@@ -87,11 +88,11 @@ impl Biolat {
             ),
         ];
 
-        bpf.add_counters("counters", counters);
-
-        for (name, histogram) in distributions.drain(..) {
-            bpf.add_distribution(name, histogram);
-        }
+        let bpf = BpfBuilder::new(skel)
+            .counters("counters", counters)
+            .distribution("latency", &BLOCKIO_LATENCY)
+            .distribution("size", &BLOCKIO_SIZE)
+            .build();
 
         Ok(Self {
             bpf,
@@ -109,7 +110,7 @@ impl Biolat {
             return;
         }
 
-        let elapsed = (now - self.counter_prev).as_secs_f64();
+        let elapsed = now - self.counter_prev;
 
         self.bpf.refresh_counters(elapsed);
 

@@ -4,10 +4,13 @@ pub mod bpf;
 pub mod classic;
 pub mod units;
 
+mod interval;
 mod nop;
 
 use metriken::AtomicHistogram;
 use metriken::LazyCounter;
+
+pub use interval::Interval;
 pub use nop::Nop;
 
 pub const HISTOGRAM_GROUPING_POWER: u8 = 7;
@@ -46,138 +49,6 @@ impl Counter {
             }
         }
         self.previous = Some(value);
-    }
-}
-
-#[macro_export]
-#[rustfmt::skip]
-/// A convenience macro for constructing a lazily initialized
-/// `metriken::Counter` given an identifier, name, and optional description.
-macro_rules! counter {
-    ($ident:ident, $name:tt) => {
-        #[metriken::metric(
-            name = $name,
-            crate = metriken
-        )]
-        pub static $ident: Lazy<metriken::Counter> = metriken::Lazy::new(|| {
-        	metriken::Counter::new()
-        });
-    };
-    ($ident:ident, $name:tt, $description:tt) => {
-        #[metriken::metric(
-            name = $name,
-            crate = metriken
-        )]
-        pub static $ident: Lazy<metriken::Counter> = metriken::Lazy::new(|| {
-        	metriken::Counter::new()
-        });
-    };
-}
-
-#[macro_export]
-#[rustfmt::skip]
-/// A convenience macro for constructing a lazily initialized
-/// `metriken::Gauge` given an identifier, name, and optional description.
-macro_rules! gauge {
-    ($ident:ident, $name:tt) => {
-        #[metriken::metric(
-            name = $name,
-            crate = metriken
-        )]
-        pub static $ident: Lazy<metriken::Gauge> = metriken::Lazy::new(|| {
-            metriken::Gauge::new()
-        });
-    };
-    ($ident:ident, $name:tt, $description:tt) => {
-        #[metriken::metric(
-            name = $name,
-            crate = metriken
-        )]
-        pub static $ident: Lazy<metriken::Gauge> = metriken::Lazy::new(|| {
-            metriken::Gauge::new()
-        });
-    };
-}
-
-#[macro_export]
-#[rustfmt::skip]
-/// A convenience macro for constructing a lazily initialized
-/// `metriken::AtomicHistogram` given an identifier, name, and optional
-/// description.
-///
-/// The histogram configuration used here can record counts for all 64bit
-/// integer values with a maximum error of 0.78%.
-macro_rules! histogram {
-    ($ident:ident, $name:tt) => {
-        #[metriken::metric(
-            name = $name,
-            crate = metriken
-        )]
-        pub static $ident: metriken::AtomicHistogram = metriken::AtomicHistogram::new($crate::common::HISTOGRAM_GROUPING_POWER, 64);
-    };
-    ($ident:ident, $name:tt, $description:tt) => {
-        #[metriken::metric(
-            name = $name,
-            description = $description,
-            crate = metriken
-        )]
-        pub static $ident: metriken::AtomicHistogram = metriken::AtomicHistogram::new($crate::common::HISTOGRAM_GROUPING_POWER, 64);
-    };
-}
-
-#[macro_export]
-#[rustfmt::skip]
-/// A convenience macro for constructing a lazily initialized
-/// `metriken::RwLockHistogram` given an identifier, name, and optional
-/// description.
-///
-/// The histogram configuration used here can record counts for all 64bit
-/// integer values with a maximum error of 0.78%.
-macro_rules! bpfhistogram {
-    ($ident:ident, $name:tt) => {
-        #[metriken::metric(
-            name = $name,
-            crate = metriken
-        )]
-        pub static $ident: metriken::RwLockHistogram = metriken::RwLockHistogram::new($crate::common::HISTOGRAM_GROUPING_POWER, 64);
-    };
-    ($ident:ident, $name:tt, $description:tt) => {
-        #[metriken::metric(
-            name = $name,
-            description = $description,
-            crate = metriken
-        )]
-        pub static $ident: metriken::RwLockHistogram = metriken::RwLockHistogram::new($crate::common::HISTOGRAM_GROUPING_POWER, 64);
-    };
-}
-
-#[macro_export]
-#[rustfmt::skip]
-/// A convenience macro for constructing a lazily initialized counter with a
-/// histogram which will track secondly rates for the same counter.
-macro_rules! counter_with_histogram {
-	($counter:ident, $histogram:ident, $name:tt) => {
-		self::counter!($counter, $name);
-		self::histogram!($histogram, $name);
-	};
-	($counter:ident, $histogram:ident, $name:tt, $description:tt) => {
-		self::counter!($counter, $name, $description);
-		self::histogram!($histogram, $name, $description);
-	}
-}
-
-#[macro_export]
-#[rustfmt::skip]
-/// A convenience macro for constructing a lazily initialized gauge with a
-/// histogram which will track instantaneous readings for the same gauge.
-macro_rules! gauge_with_histogram {
-    ($gauge:ident, $histogram:ident, $name:tt) => {
-        self::gauge!($gauge, $name);
-        self::histogram!($histogram, $name);
-    };
-    ($gauge:ident, $histogram:ident, $name:tt, $description:tt) => {
-        self::gauge!($gauge, $name, $description);
-        self::histogram!($histogram, $name, $description);
     }
 }
 
