@@ -1,5 +1,4 @@
 use crate::common::HISTOGRAM_GROUPING_POWER;
-use crate::*;
 use metriken::{metric, Counter, LazyCounter, RwLockHistogram};
 
 #[metric(
@@ -16,6 +15,13 @@ pub static SCHEDULER_RUNQUEUE_LATENCY: RwLockHistogram =
     metadata = { unit = "nanoseconds" }
 )]
 pub static SCHEDULER_RUNNING: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
+
+#[metric(
+    name = "scheduler/offcpu",
+    description = "Distribution of the amount of time tasks were off-CPU",
+    metadata = { unit = "nanoseconds" }
+)]
+pub static SCHEDULER_OFFCPU: RwLockHistogram = RwLockHistogram::new(HISTOGRAM_GROUPING_POWER, 64);
 
 #[metric(
     name = "scheduler/context_switch/involuntary",
