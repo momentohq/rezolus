@@ -1,7 +1,7 @@
 use crate::common::{Counter, Interval, Nop};
 use crate::samplers::cpu::*;
 use crate::{distributed_slice, Config, Sampler};
-use core::time::Duration;
+
 use libc::mach_port_t;
 use metriken::{DynBoxedMetric, MetricBuilder};
 use ringlog::error;

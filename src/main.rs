@@ -1,4 +1,4 @@
-use crate::common::Counter;
+
 use backtrace::Backtrace;
 use clap::{Arg, Command};
 use linkme::distributed_slice;
