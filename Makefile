@@ -2,11 +2,13 @@
 
 default: pull-request-ci
 
-pipeline-build-amd64:
-	cargo build --release \
-		&& ./package.sh amd64/rezolus.tar.gz target/release/rezolus \
+install-bpftool-arm:
+	curl -fSL "https://github.com/libbpf/bpftool/releases/download/v7.2.0/bpftool-v7.2.0-arm64.tar.gz" -o bpftool.tar.gz \
+		&& tar --extract --file bpftool.tar.gz --directory /usr/local/bin \
+		&& chmod +x /usr/local/bin/bpftool \
+		&& source ~/.bashrc
 
-pipeline-build-arm64v8:
+pipeline-build-arm64v8: install-bpftool-arm
 	cargo build --release \
 		&& ./package.sh arm64v8/rezolus.tar.gz target/release/rezolus \
 
