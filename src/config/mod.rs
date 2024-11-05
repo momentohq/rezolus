@@ -1,13 +1,37 @@
-use crate::Duration;
+use crate::common::HISTOGRAM_GROUPING_POWER;
+
 use ringlog::Level;
 use serde::Deserialize;
+
 use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::net::ToSocketAddrs;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::Path;
 
-#[derive(Deserialize)]
+mod general;
+mod log;
+mod prometheus;
+mod sampler;
+
+use general::General;
+use log::Log;
+use prometheus::Prometheus;
+use sampler::Sampler as SamplerConfig;
+
+fn enabled() -> bool {
+    true
+}
+
+fn histogram_grouping_power() -> u8 {
+    HISTOGRAM_GROUPING_POWER
+}
+
+fn listen() -> String {
+    "0.0.0.0:4242".into()
+}
+
+#[derive(Deserialize, Default)]
 pub struct Config {
+    #[serde(default)]
     general: General,
     #[serde(default)]
     log: Log,
@@ -34,6 +58,8 @@ impl Config {
                 std::process::exit(1);
             })
             .unwrap();
+
+        config.general.check();
 
         config.prometheus().check();
 
@@ -69,224 +95,7 @@ impl Config {
     pub fn enabled(&self, name: &str) -> bool {
         self.samplers
             .get(name)
-            .map(|c| c.enabled())
-            .unwrap_or(self.defaults.enabled())
-    }
-
-    pub fn bpf(&self, name: &str) -> bool {
-        self.samplers
-            .get(name)
-            .map(|c| c.bpf())
-            .unwrap_or(self.defaults.bpf())
-    }
-
-    pub fn interval(&self, name: &str) -> Duration {
-        self.samplers
-            .get(name)
-            .map(|c| c.interval())
-            .unwrap_or(self.defaults.interval())
-    }
-
-    pub fn distribution_interval(&self, name: &str) -> Duration {
-        self.samplers
-            .get(name)
-            .map(|c| c.distribution_interval())
-            .unwrap_or(self.defaults.distribution_interval())
-    }
-}
-
-#[derive(Deserialize)]
-pub struct General {
-    listen: String,
-    #[serde(default = "disabled")]
-    compression: bool,
-}
-
-impl General {
-    pub fn listen(&self) -> SocketAddr {
-        self.listen
-            .to_socket_addrs()
-            .map_err(|e| {
-                eprintln!("bad listen address: {e}");
-                std::process::exit(1);
-            })
-            .unwrap()
-            .next()
-            .ok_or_else(|| {
-                eprintln!("could not resolve socket addr");
-                std::process::exit(1);
-            })
-            .unwrap()
-    }
-
-    pub fn compression(&self) -> bool {
-        self.compression
-    }
-}
-
-#[derive(Deserialize)]
-pub struct Log {
-    #[serde(with = "LevelDef")]
-    #[serde(default = "log_level")]
-    level: Level,
-}
-
-impl Default for Log {
-    fn default() -> Self {
-        Self { level: log_level() }
-    }
-}
-
-impl Log {
-    pub fn level(&self) -> Level {
-        self.level
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-#[serde(remote = "Level")]
-#[serde(deny_unknown_fields)]
-enum LevelDef {
-    Error,
-    Warn,
-    Info,
-    Debug,
-    Trace,
-}
-
-fn log_level() -> Level {
-    Level::Info
-}
-
-#[derive(Deserialize)]
-pub struct Prometheus {
-    #[serde(default = "disabled")]
-    histograms: bool,
-    #[serde(default = "four")]
-    histogram_grouping_power: u8,
-}
-
-impl Default for Prometheus {
-    fn default() -> Self {
-        Self {
-            histograms: false,
-            histogram_grouping_power: 4,
-        }
-    }
-}
-
-impl Prometheus {
-    pub fn check(&self) {
-        if !(2..=(crate::common::HISTOGRAM_GROUPING_POWER)).contains(&self.histogram_grouping_power)
-        {
-            eprintln!(
-                "prometheus histogram downsample factor must be in the range 2..={}",
-                crate::common::HISTOGRAM_GROUPING_POWER
-            );
-            std::process::exit(1);
-        }
-    }
-
-    pub fn histograms(&self) -> bool {
-        self.histograms
-    }
-
-    pub fn histogram_grouping_power(&self) -> u8 {
-        self.histogram_grouping_power
-    }
-}
-
-pub fn enabled() -> bool {
-    true
-}
-
-pub fn disabled() -> bool {
-    false
-}
-
-pub fn four() -> u8 {
-    4
-}
-
-pub fn interval() -> String {
-    "10ms".into()
-}
-
-pub fn distribution_interval() -> String {
-    "50ms".into()
-}
-
-#[derive(Deserialize)]
-pub struct SamplerConfig {
-    #[serde(default = "enabled")]
-    enabled: bool,
-    #[serde(default = "enabled")]
-    bpf: bool,
-    #[serde(default = "interval")]
-    interval: String,
-    #[serde(default = "distribution_interval")]
-    distribution_interval: String,
-}
-
-impl Default for SamplerConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            bpf: true,
-            interval: interval(),
-            distribution_interval: distribution_interval(),
-        }
-    }
-}
-
-impl SamplerConfig {
-    pub fn check(&self, name: &str) {
-        if let Err(e) = self.interval.parse::<humantime::Duration>() {
-            eprintln!("{name} sampler interval is not valid: {e}");
-            std::process::exit(1);
-        }
-        if self.interval() < Duration::from_millis(1) {
-            eprintln!("{name} sampler interval is too short. Minimum interval is: 1ms");
-            std::process::exit(1);
-        }
-
-        if let Err(e) = self.distribution_interval.parse::<humantime::Duration>() {
-            eprintln!("{name} sampler distribution interval is not valid: {e}");
-            std::process::exit(1);
-        }
-
-        if self.distribution_interval() < Duration::from_millis(1) {
-            eprintln!(
-                "{name} sampler distribution interval is too short. Minimum interval is: 1ms"
-            );
-            std::process::exit(1);
-        }
-    }
-
-    pub fn enabled(&self) -> bool {
-        self.enabled
-    }
-
-    pub fn bpf(&self) -> bool {
-        self.bpf
-    }
-
-    pub fn interval(&self) -> Duration {
-        Duration::from_nanos(
-            self.interval
-                .parse::<humantime::Duration>()
-                .unwrap()
-                .as_nanos() as _,
-        )
-    }
-
-    pub fn distribution_interval(&self) -> Duration {
-        Duration::from_nanos(
-            self.distribution_interval
-                .parse::<humantime::Duration>()
-                .unwrap()
-                .as_nanos() as _,
-        )
+            .and_then(|v| v.enabled())
+            .unwrap_or(self.defaults.enabled().unwrap_or(enabled()))
     }
 }

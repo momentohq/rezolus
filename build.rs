@@ -1,9 +1,9 @@
 fn main() {
-    #[cfg(all(feature = "bpf", target_os = "linux"))]
+    #[cfg(target_os = "linux")]
     bpf::generate();
 }
 
-#[cfg(all(feature = "bpf", target_os = "linux"))]
+#[cfg(target_os = "linux")]
 mod bpf {
     use libbpf_cargo::SkeletonBuilder;
 
@@ -11,11 +11,14 @@ mod bpf {
     // Each entry `(sampler, program)` maps to a unique path in the `samplers`
     // directory.
     const SOURCES: &[(&str, &str)] = &[
-        ("block_io", "latency"),
+        ("blockio", "latency"),
+        ("blockio", "requests"),
         ("cpu", "usage"),
         ("network", "traffic"),
         ("scheduler", "runqueue"),
+        ("syscall", "counts"),
         ("syscall", "latency"),
+        ("tcp", "connect_latency"),
         ("tcp", "packet_latency"),
         ("tcp", "receive"),
         ("tcp", "retransmit"),
@@ -33,13 +36,21 @@ mod bpf {
             if target_arch == "x86_64" {
                 SkeletonBuilder::new()
                     .source(&src)
-                    .clang_args("-Isrc/common/bpf/x86_64 -fno-unwind-tables -D__TARGET_ARCH_x86")
+                    .clang_args([
+                        "-Isrc/common/bpf/x86_64",
+                        "-fno-unwind-tables",
+                        "-D__TARGET_ARCH_x86",
+                    ])
                     .build_and_generate(&tgt)
                     .unwrap();
             } else if target_arch == "aarch64" {
                 SkeletonBuilder::new()
                     .source(&src)
-                    .clang_args("-Isrc/common/bpf/aarch64 -fno-unwind-tables -D__TARGET_ARCH_arm64")
+                    .clang_args([
+                        "-Isrc/common/bpf/aarch64",
+                        "-fno-unwind-tables",
+                        "-D__TARGET_ARCH_arm64",
+                    ])
                     .build_and_generate(&tgt)
                     .unwrap();
             } else {

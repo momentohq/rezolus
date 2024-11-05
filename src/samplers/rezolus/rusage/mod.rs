@@ -1,50 +1,23 @@
-use super::stats::*;
-use super::*;
-use crate::common::units::{KIBIBYTES, MICROSECONDS, SECONDS};
-use crate::common::{Counter, Interval, Nop};
-
-#[distributed_slice(REZOLUS_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
-    if let Ok(rusage) = Rusage::new(config) {
-        Box::new(rusage)
-    } else {
-        Box::new(Nop {})
-    }
-}
-
 const NAME: &str = "rezolus_rusage";
 
-pub struct Rusage {
-    interval: Interval,
-    ru_utime: Counter,
-    ru_stime: Counter,
-}
+use crate::common::*;
+use crate::samplers::rezolus::stats::*;
+use crate::*;
 
-impl Rusage {
-    pub fn new(config: &Config) -> Result<Self, ()> {
-        // check if sampler should be enabled
-        if !config.enabled(NAME) {
-            return Err(());
-        }
-
-        Ok(Self {
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
-            ru_utime: Counter::new(&RU_UTIME, Some(&RU_UTIME_HISTOGRAM)),
-            ru_stime: Counter::new(&RU_STIME, Some(&RU_STIME_HISTOGRAM)),
-        })
+#[distributed_slice(SAMPLERS)]
+fn init(config: Arc<Config>) -> SamplerResult {
+    if !config.enabled(NAME) {
+        return Ok(None);
     }
+
+    Ok(Some(Box::new(Rusage {})))
 }
 
+pub struct Rusage {}
+
+#[async_trait]
 impl Sampler for Rusage {
-    fn sample(&mut self) {
-        if let Ok(elapsed) = self.interval.try_wait(Instant::now()) {
-            self.sample_rusage(elapsed.as_secs_f64());
-        }
-    }
-}
-
-impl Rusage {
-    fn sample_rusage(&mut self, elapsed: f64) {
+    async fn refresh(&self) {
         let mut rusage = libc::rusage {
             ru_utime: libc::timeval {
                 tv_sec: 0,
@@ -71,13 +44,11 @@ impl Rusage {
         };
 
         if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut rusage) } == 0 {
-            self.ru_utime.set(
-                elapsed,
+            RU_UTIME.set(
                 rusage.ru_utime.tv_sec as u64 * SECONDS
                     + rusage.ru_utime.tv_usec as u64 * MICROSECONDS,
             );
-            self.ru_stime.set(
-                elapsed,
+            RU_STIME.set(
                 rusage.ru_stime.tv_sec as u64 * SECONDS
                     + rusage.ru_stime.tv_usec as u64 * MICROSECONDS,
             );

@@ -1,91 +1,26 @@
-#[cfg(all(feature = "bpf", target_os = "linux"))]
+mod counters;
+mod gauges;
+
+pub use counters::*;
+pub use gauges::*;
+
+#[cfg(target_os = "linux")]
 pub mod bpf;
 
-pub mod classic;
-pub mod units;
+#[cfg(target_os = "linux")]
+pub use bpf::*;
 
-mod interval;
-mod nop;
+#[cfg(target_os = "linux")]
+pub mod linux;
 
-use metriken::AtomicHistogram;
-use metriken::LazyCounter;
+pub static HISTOGRAM_GROUPING_POWER: u8 = 3;
 
-pub use interval::Interval;
-pub use nop::Nop;
+// Time units with base unit as nanoseconds
+pub const SECONDS: u64 = 1_000 * MILLISECONDS;
+pub const MILLISECONDS: u64 = 1_000 * MICROSECONDS;
+pub const MICROSECONDS: u64 = 1_000 * NANOSECONDS;
+pub const NANOSECONDS: u64 = 1;
 
-pub const HISTOGRAM_GROUPING_POWER: u8 = 7;
-
-/// A `Counter` is a wrapper type that enables us to automatically calculate
-/// percentiles for secondly rates between subsequent counter observations.
-///
-/// To do this, it contains the current reading, previous reading, and
-/// optionally a histogram to store rate observations.
-pub struct Counter {
-    previous: Option<u64>,
-    counter: &'static LazyCounter,
-    histogram: Option<&'static AtomicHistogram>,
-}
-
-impl Counter {
-    /// Construct a new counter that wraps a `metriken` counter and optionally a
-    /// `metriken` histogram.
-    pub fn new(counter: &'static LazyCounter, histogram: Option<&'static AtomicHistogram>) -> Self {
-        Self {
-            previous: None,
-            counter,
-            histogram,
-        }
-    }
-
-    /// Updates the counter by setting the current value to a new value. If this
-    /// counter has a histogram it also calculates the rate since the last reading
-    /// and increments the histogram.
-    pub fn set(&mut self, elapsed: f64, value: u64) {
-        if let Some(previous) = self.previous {
-            let delta = value.wrapping_sub(previous);
-            self.counter.add(delta);
-            if let Some(histogram) = self.histogram {
-                let _ = histogram.increment((delta as f64 / elapsed) as _);
-            }
-        }
-        self.previous = Some(value);
-    }
-}
-
-#[macro_export]
-#[rustfmt::skip]
-/// A convenience macro for defining a top-level sampler which will contain
-/// other samplers. For instance, this is used for the top-level `cpu` sampler
-/// which then contains other related samplers for perf events, cpu usage, etc.
-macro_rules! sampler {
-    ($ident:ident, $name:tt, $slice:ident) => {
-        #[distributed_slice]
-        pub static $slice: [fn(config: &Config) -> Box<dyn Sampler>] = [..];
-
-        #[distributed_slice(SAMPLERS)]
-        fn init(config: &Config) -> Box<dyn Sampler> {
-            Box::new($ident::new(config))
-        }
-
-        pub struct $ident {
-            samplers: Vec<Box<dyn Sampler>>,
-        }
-
-        impl $ident {
-            fn new(config: &Config) -> Self {
-                let samplers = $slice.iter().map(|init| init(config)).collect();
-                Self {
-                    samplers,
-                }
-            }
-        }
-
-        impl Sampler for $ident {
-            fn sample(&mut self) {
-                for sampler in &mut self.samplers {
-                    sampler.sample()
-                }
-            }
-        }
-    };
-}
+// Data (IEC) with base unit as bytes - typically used for memory
+pub const KIBIBYTES: u64 = 1024 * BYTES;
+pub const BYTES: u64 = 1;

@@ -17,11 +17,22 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
-#define COUNTER_GROUP_WIDTH 8
-#define HISTOGRAM_POWER 7
+#define COUNTER_GROUP_WIDTH 16
+#define HISTOGRAM_BUCKETS HISTOGRAM_BUCKETS_POW_3
+#define HISTOGRAM_POWER 3
 #define MAX_CPUS 1024
-#define MAX_SYSCALL_ID 1024
 #define MAX_PID 4194304
+#define MAX_SYSCALL_ID 1024
+
+#define TOTAL 0
+#define READ 1
+#define WRITE 2
+#define POLL 3
+#define LOCK 4
+#define TIME 5
+#define SLEEP 6
+#define SOCKET 7
+#define YIELD 8
 
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
@@ -30,25 +41,13 @@ struct {
 	__type(value, u64);
 } start SEC(".maps");
 
-// counters for syscalls
-// 0 - total
-// 1..COUNTER_GROUP_WIDTH - grouped syscalls defined in userspace in the
-//                          `syscall_lut` map
-struct {
-	__uint(type, BPF_MAP_TYPE_ARRAY);
-	__uint(map_flags, BPF_F_MMAPABLE);
-	__type(key, u32);
-	__type(value, u64);
-	__uint(max_entries, MAX_CPUS * COUNTER_GROUP_WIDTH);
-} counters SEC(".maps");
-
 // tracks the latency distribution of all syscalls
 struct {
 	__uint(type, BPF_MAP_TYPE_ARRAY);
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } total_latency SEC(".maps");
 
 struct {
@@ -56,7 +55,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } read_latency SEC(".maps");
 
 struct {
@@ -64,7 +63,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } write_latency SEC(".maps");
 
 struct {
@@ -72,7 +71,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } poll_latency SEC(".maps");
 
 struct {
@@ -80,7 +79,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } lock_latency SEC(".maps");
 
 struct {
@@ -88,7 +87,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } time_latency SEC(".maps");
 
 struct {
@@ -96,7 +95,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } sleep_latency SEC(".maps");
 
 struct {
@@ -104,8 +103,16 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } socket_latency SEC(".maps");
+
+struct {
+	__uint(type, BPF_MAP_TYPE_ARRAY);
+	__uint(map_flags, BPF_F_MMAPABLE);
+	__type(key, u32);
+	__type(value, u64);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
+} yield_latency SEC(".maps");
 
 // provides a lookup table from syscall id to a counter index offset
 struct {
@@ -144,35 +151,6 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 
 	u32 syscall_id = args->id;
 
-	// update the total counter
-	idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
-	cnt = bpf_map_lookup_elem(&counters, &idx);
-
-	if (cnt) {
-		__sync_fetch_and_add(cnt, 1);
-	}
-
-	// for some syscalls, we track counts by "family" of syscall. check the
-	// lookup table and increment the appropriate counter
-	idx = 0;
-	if (syscall_id < MAX_SYSCALL_ID) {
-		u32 *counter_offset = bpf_map_lookup_elem(&syscall_lut, &syscall_id);
-
-		if (counter_offset && *counter_offset && *counter_offset < COUNTER_GROUP_WIDTH) {
-			idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id() + ((u32)*counter_offset);
-			cnt = bpf_map_lookup_elem(&counters, &idx);
-
-			if (cnt) {
-				__sync_fetch_and_add(cnt, 1);
-			}
-		} else {
-			// syscall counter offset was outside of the expected range
-			// this indicates that the LUT contains invalid values
-		}
-	} else {
-		// syscall id was out of the expected range
-	}
-
 	// lookup the start time
 	start_ts = bpf_map_lookup_elem(&start, &tid);
 
@@ -194,42 +172,48 @@ int sys_exit(struct trace_event_raw_sys_exit *args)
 	cnt = bpf_map_lookup_elem(&total_latency, &idx);
 
 	if (cnt) {
-		__sync_fetch_and_add(cnt, 1);
+		__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
 	}
 
 	// increment latency histogram for the syscall family
 	if (syscall_id < MAX_SYSCALL_ID) {
 		u32 *counter_offset = bpf_map_lookup_elem(&syscall_lut, &syscall_id);
 
-		if (!counter_offset || !*counter_offset || *counter_offset >= COUNTER_GROUP_WIDTH) {
+		if (!counter_offset) {
 			return 0;
 		}
 
-		// nested if-else binary search. finds the correct histogram in 3 branches
-		if (*counter_offset < 5) {
-			if (*counter_offset < 3) {
-				if (*counter_offset == 1) {
-					cnt = bpf_map_lookup_elem(&read_latency, &idx);
-				} else {
-					cnt = bpf_map_lookup_elem(&write_latency, &idx);
-				}
-			} else if (*counter_offset == 3) {
+		switch (*counter_offset) {
+			case READ:
+				cnt = bpf_map_lookup_elem(&read_latency, &idx);
+				break;
+			case WRITE:
+				cnt = bpf_map_lookup_elem(&write_latency, &idx);
+				break;
+			case POLL:
 				cnt = bpf_map_lookup_elem(&poll_latency, &idx);
-			} else {
+				break;
+			case LOCK:
 				cnt = bpf_map_lookup_elem(&lock_latency, &idx);
-			}
-		} else if (*counter_offset < 7) {
-			if (*counter_offset == 5) {
+				break;
+			case TIME:
 				cnt = bpf_map_lookup_elem(&time_latency, &idx);
-			} else {
+				break;
+			case SLEEP:
 				cnt = bpf_map_lookup_elem(&sleep_latency, &idx);
-			}
-		} else {
-			cnt = bpf_map_lookup_elem(&socket_latency, &idx);
+				break;
+			case SOCKET:
+				cnt = bpf_map_lookup_elem(&socket_latency, &idx);
+				break;
+			case YIELD:
+				cnt = bpf_map_lookup_elem(&yield_latency, &idx);
+				break;
+			default:
+				return 0;
 		}
 
 		if (cnt) {
-			__sync_fetch_and_add(cnt, 1);
+			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
 		}
 	}
 
