@@ -4,8 +4,7 @@ default: pull-request-ci
 
 install-dependencies:
 	yum update -y
-	yum install cmake3 clang-devel -y
-	(ln -s /usr/bin/cmake3 /usr/bin/cmake) || echo "cmake already installed, nothing to do"
+	yum install clang-devel -y
 
 compile-binaries: install-dependencies
 	cargo --version \

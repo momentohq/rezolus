@@ -35,3 +35,4 @@ pushd $WORK_DIR
 popd
 
 rm -rf $WORK_DIR
+
