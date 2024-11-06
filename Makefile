@@ -7,7 +7,7 @@ install-dependencies:
 	yum install cmake3 clang-devel -y
 	(ln -s /usr/bin/cmake3 /usr/bin/cmake) || echo "cmake already installed, nothing to do"
 
-compile-binaries:
+compile-binaries: install-dependencies
 	cargo --version \
 	&& cargo build --locked --release
 
