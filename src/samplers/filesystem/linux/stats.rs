@@ -1,5 +1,3 @@
-use metriken::{metric, Gauge, LazyGauge};
-
 #[metric(
     name = "filesystem/descriptors/open",
     description = "The number of file descriptors currently allocated"

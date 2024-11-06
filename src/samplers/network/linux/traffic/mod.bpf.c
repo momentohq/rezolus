@@ -11,7 +11,7 @@
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_endian.h>
 
-#define COUNTER_GROUP_WIDTH 16
+#define COUNTER_GROUP_WIDTH 8
 #define MAX_CPUS 1024
 
 // counter indices
@@ -35,30 +35,23 @@ int BPF_PROG(netif_receive_skb, struct sk_buff *skb)
 	u64 len;
 	u64 *cnt;
 	u32 idx;
-	struct net_device *dev;
-	u8 addr_assign_type;
-
-	dev = BPF_CORE_READ(skb, dev);
-	addr_assign_type = BPF_CORE_READ(dev, addr_assign_type);
-
-	if (addr_assign_type != 0) {
-		return 0;
-	}
 
 	len = BPF_CORE_READ(skb, len);
 
-	idx = 8 * bpf_get_smp_processor_id() + RX_PACKETS;
+	u32 offset = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
+
+	idx = offset + RX_PACKETS;
 	cnt = bpf_map_lookup_elem(&counters, &idx);
 
 	if (cnt) {
-		__sync_fetch_and_add(cnt, 1);
+		__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
 	}
 
-	idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id() + RX_BYTES;
+	idx = offset + RX_BYTES;
 	cnt = bpf_map_lookup_elem(&counters, &idx);
 
 	if (cnt) {
-		__sync_fetch_and_add(cnt, len);
+		__atomic_fetch_add(cnt, len, __ATOMIC_RELAXED);
 	}
 
 	return 0;
@@ -71,28 +64,23 @@ int BPF_PROG(tcp_cleanup_rbuf, struct sk_buff *skb, struct net_device *dev, void
 	u64 len;
 	u64 *cnt;
 	u32 idx;
-	u8 addr_assign_type;
-
-	addr_assign_type = BPF_CORE_READ(dev, addr_assign_type);
-
-	if (addr_assign_type != 0) {
-		return 0;
-	}
 
 	len = BPF_CORE_READ(skb, len);
 
-	idx = 8 * bpf_get_smp_processor_id() + TX_PACKETS;
+	u32 offset = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id();
+
+	idx = offset + TX_PACKETS;
 	cnt = bpf_map_lookup_elem(&counters, &idx);
 
 	if (cnt) {
-		__sync_fetch_and_add(cnt, 1);
+		__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
 	}
 
-	idx = COUNTER_GROUP_WIDTH * bpf_get_smp_processor_id() + TX_BYTES;
+	idx = offset + TX_BYTES;
 	cnt = bpf_map_lookup_elem(&counters, &idx);
 
 	if (cnt) {
-		__sync_fetch_and_add(cnt, len);
+		__atomic_fetch_add(cnt, len, __ATOMIC_RELAXED);
 	}
 
 	return 0;

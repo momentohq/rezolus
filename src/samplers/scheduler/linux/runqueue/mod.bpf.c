@@ -15,7 +15,8 @@
 #include <bpf/bpf_helpers.h>
 
 #define COUNTER_GROUP_WIDTH 8
-#define HISTOGRAM_POWER 7
+#define HISTOGRAM_BUCKETS HISTOGRAM_BUCKETS_POW_3
+#define HISTOGRAM_POWER 3
 #define MAX_CPUS 1024
 #define MAX_PID 4194304
 
@@ -90,7 +91,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } runqlat SEC(".maps");
 
 struct {
@@ -98,7 +99,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } running SEC(".maps");
 
 struct {
@@ -106,7 +107,7 @@ struct {
 	__uint(map_flags, BPF_F_MMAPABLE);
 	__type(key, u32);
 	__type(value, u64);
-	__uint(max_entries, HISTOGRAM_BUCKETS_POW_7);
+	__uint(max_entries, HISTOGRAM_BUCKETS);
 } offcpu SEC(".maps");
 
 /* record enqueue timestamp */
@@ -146,7 +147,7 @@ SEC("tp_btf/sched_switch")
 int handle__sched_switch(u64 *ctx)
 {
 	/* TP_PROTO(bool preempt, struct task_struct *prev,
-	 *	    struct task_struct *next)
+	 *      struct task_struct *next)
 	 */
 	struct task_struct *prev = (struct task_struct *)ctx[1];
 	struct task_struct *next = (struct task_struct *)ctx[2];
@@ -171,7 +172,7 @@ int handle__sched_switch(u64 *ctx)
 		cnt = bpf_map_lookup_elem(&counters, &idx);
 
 		if (cnt) {
-			__sync_fetch_and_add(cnt, 1);
+			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
 		}
 
 		pid = prev->pid;
@@ -188,7 +189,7 @@ int handle__sched_switch(u64 *ctx)
 			idx = value_to_index(delta_ns, HISTOGRAM_POWER);
 			cnt = bpf_map_lookup_elem(&running, &idx);
 			if (cnt) {
-				__sync_fetch_and_add(cnt, 1);
+				__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
 			}
 
 			*tsp = 0;
@@ -218,7 +219,7 @@ int handle__sched_switch(u64 *ctx)
 		idx = value_to_index(delta_ns, HISTOGRAM_POWER);
 		cnt = bpf_map_lookup_elem(&runqlat, &idx);
 		if (cnt) {
-			__sync_fetch_and_add(cnt, 1);
+			__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
 		}
 
 		*tsp = 0;
@@ -236,7 +237,7 @@ int handle__sched_switch(u64 *ctx)
 				idx = value_to_index(offcpu_ns, HISTOGRAM_POWER);
 				cnt = bpf_map_lookup_elem(&offcpu, &idx);
 				if (cnt) {
-					__sync_fetch_and_add(cnt, 1);
+					__atomic_fetch_add(cnt, 1, __ATOMIC_RELAXED);
 				}
 			}
 

@@ -1,5 +1,91 @@
 ## [Unreleased]
 
+## [4.1.1] - 2024-10-24
+
+### Fixed
+
+- Fixed packaging workflow so DEB and RPM artifacts are published. (#365)
+
+## [4.1.0] - 2024-10-23
+
+### Added
+
+- `rezolus-recorder` which can connect to a running Rezolus instance and record
+  metrics into a parquet file. (#356)
+
+### Fixed
+
+- Configured listen address was ignored and a default was used. (#362)
+
+## [4.0.0] - 2024-09-27
+
+### Changed
+
+- All samplers are now async and run on-demand when a metrics endpoint is hit.
+  Percentiles must now be calculated from the free-running histograms. (#334)
+- BPF is now non-optional on Linux. (#336)
+- Makes HTTP compression dependent on client accept headers, removes the need
+  for separate configuration of compression. (#337)
+- Removes histograms for counter and gauge metrics. (#338)
+- Histogram grouping power reduced from 7 (0.781% error) to 3 (12.5% error).
+  This reduces the memory footprint for each histogram. (#339)
+
+### Added
+
+- Syscall samplers now track yield syscall. (#310)
+- TCP active open (connect) latency now tracked. (#342)
+
+## [3.18.1] - 2024-08-09
+
+### Changed
+
+- Ubuntu Bionic dropped from packaging job. (#306)
+
+## [3.18.0] - 2024-08-09
+
+### Fixed
+
+- CPU per core cycle and instruction counters were incorrect. The system totals
+  reflected the appropriate value. (#304)
+
+### Added
+
+- Allow setting the metric snapshot interval to better address cases where
+  metrics are not scraped on a secondly basis. (#286)
+- Network carrier change metric. (#290)
+
+### Changed
+
+- Explicitly use relaxed atomics in BPF samplers. (#276)
+- Split syscall sampler into syscall_latency and syscall_counts to allow more
+  fine-grained configuration and allow for reduced overhead. (#298)
+- Split block_io latency sampler into block_io_latency and block_io_requests to
+  allow more fine-grained configuration and allow for reduced overhead. (#299)
+
+## [3.17.0] - 2024-06-27
+
+### Fixed
+
+- Fixes sampler configuration inheritance for partially defined sampler config
+  sections (#273)
+- Linux BPF CPU usage sampler had idle time metric counting backwards (#281)
+
+### Added
+
+- Fallback for linux network traffic sampler to get metrics from sysfs when BPF
+  is not enabled or fails to initialize (#274)
+- JSON stats endpoints (#277)
+
+## [3.16.0] - 2024-05-14
+
+### Fixed
+
+- Listen address could not be changed (#264)
+
+### Added
+
+- CPU busy time metric for non-Prometheus endpoints (#256)
+
 ## [3.15.0] - 2024-05-09
 
 ### Fixed
@@ -246,7 +332,14 @@
 - Rewritten implementation of Rezolus using libbpf-rs and perf-event2 to provide
   a more modern approach to BPF and Perf Event instrumentation. 
 
-[unreleased]: https://github.com/iopsystems/rezolus/compare/v3.15.0...HEAD
+[unreleased]: https://github.com/iopsystems/rezolus/compare/v4.1.1...HEAD
+[4.1.1]: https://github.com/iopsystems/rezolus/compare/v4.1.0...v4.1.1
+[4.1.0]: https://github.com/iopsystems/rezolus/compare/v4.0.0...v4.1.0
+[4.0.0]: https://github.com/iopsystems/rezolus/compare/v3.18.1...v4.0.0
+[3.18.1]: https://github.com/iopsystems/rezolus/compare/v3.18.0...v3.18.1
+[3.18.0]: https://github.com/iopsystems/rezolus/compare/v3.17.0...v3.18.0
+[3.17.0]: https://github.com/iopsystems/rezolus/compare/v3.16.0...v3.17.0
+[3.16.0]: https://github.com/iopsystems/rezolus/compare/v3.15.0...v3.16.0
 [3.15.0]: https://github.com/iopsystems/rezolus/compare/v3.14.2...v3.15.0
 [3.14.2]: https://github.com/iopsystems/rezolus/compare/v3.14.1...v3.14.2
 [3.14.1]: https://github.com/iopsystems/rezolus/compare/v3.14.0...v3.14.1

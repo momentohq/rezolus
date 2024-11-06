@@ -1,36 +1,47 @@
-use crate::common::{Interval, Nop};
-use crate::samplers::tcp::stats::*;
-use crate::samplers::tcp::*;
-use metriken::Gauge;
-use std::fs::File;
-use std::io::Read;
-use std::io::Seek;
+const NAME: &str = "tcp_connection_state";
 
-#[distributed_slice(TCP_SAMPLERS)]
-fn init(config: &Config) -> Box<dyn Sampler> {
-    if let Ok(s) = ConnectionState::new(config) {
-        Box::new(s)
-    } else {
-        Box::new(Nop::new(config))
+use crate::samplers::tcp::linux::stats::*;
+use crate::*;
+
+use metriken::LazyGauge;
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::sync::Mutex;
+
+#[distributed_slice(SAMPLERS)]
+fn init(config: Arc<Config>) -> SamplerResult {
+    if !config.enabled(NAME) {
+        return Ok(None);
+    }
+
+    let inner = ConnectionStateInner::new()?;
+
+    Ok(Some(Box::new(ConnectionState {
+        inner: Arc::new(Mutex::new(inner)),
+    })))
+}
+
+pub struct ConnectionState {
+    inner: Arc<Mutex<ConnectionStateInner>>,
+}
+
+#[async_trait]
+impl Sampler for ConnectionState {
+    async fn refresh(&self) {
+        let mut inner = self.inner.lock().await;
+
+        let _ = inner.refresh().await;
     }
 }
 
-const NAME: &str = "tcp_connection_state";
-
-pub struct ConnectionState {
-    interval: Interval,
+pub struct ConnectionStateInner {
     files: Vec<File>,
-    gauges: Vec<(&'static Lazy<Gauge>, i64)>,
+    gauges: Vec<(&'static LazyGauge, i64)>,
 }
 
-impl ConnectionState {
-    pub fn new(config: &Config) -> Result<Self, ()> {
-        // check if sampler should be enabled
-        if !config.enabled(NAME) {
-            return Err(());
-        }
-
-        let gauges: Vec<(&'static Lazy<Gauge>, i64)> = vec![
+impl ConnectionStateInner {
+    pub fn new() -> Result<Self, std::io::Error> {
+        let gauges: Vec<(&'static LazyGauge, i64)> = vec![
             (&TCP_CONN_STATE_ESTABLISHED, 0),
             (&TCP_CONN_STATE_SYN_SENT, 0),
             (&TCP_CONN_STATE_SYN_RECV, 0),
@@ -45,37 +56,32 @@ impl ConnectionState {
             (&TCP_CONN_STATE_NEW_SYN_RECV, 0),
         ];
 
-        let ipv4 = File::open("/proc/net/tcp").map_err(|e| {
+        let ipv4 = std::fs::File::open("/proc/net/tcp").map_err(|e| {
             error!("Failed to open /proc/net/tcp: {e}");
         });
 
-        let ipv6 = File::open("/proc/net/tcp6").map_err(|e| {
+        let ipv6 = std::fs::File::open("/proc/net/tcp6").map_err(|e| {
             error!("Failed to open /proc/net/tcp6: {e}");
         });
 
-        let mut files: Vec<Result<File, ()>> = vec![ipv4, ipv6];
+        let mut files: Vec<Result<std::fs::File, ()>> = vec![ipv4, ipv6];
 
-        let files: Vec<File> = files.drain(..).filter_map(|v| v.ok()).collect();
+        let files: Vec<File> = files
+            .drain(..)
+            .filter_map(|v| v.ok())
+            .map(File::from_std)
+            .collect();
 
         if files.is_empty() {
-            error!("Could not open any file in /proc/net for this sampler");
-            return Err(());
+            return Err(std::io::Error::other(
+                "Could not open any file in /proc/net for this sampler",
+            ));
         }
 
-        Ok(Self {
-            files,
-            gauges,
-            interval: Interval::new(Instant::now(), config.interval(NAME)),
-        })
+        Ok(Self { files, gauges })
     }
-}
 
-impl Sampler for ConnectionState {
-    fn sample(&mut self) {
-        if self.interval.try_wait(Instant::now()).is_err() {
-            return;
-        }
-
+    async fn refresh(&mut self) {
         // zero the temporary gauges
         for (_, gauge) in self.gauges.iter_mut() {
             *gauge = 0;
@@ -83,9 +89,9 @@ impl Sampler for ConnectionState {
 
         for file in self.files.iter_mut() {
             // seek to start to cause reload of content
-            if file.rewind().is_ok() {
+            if file.rewind().await.is_ok() {
                 let mut data = String::new();
-                if file.read_to_string(&mut data).is_err() {
+                if file.read_to_string(&mut data).await.is_err() {
                     error!("error reading /proc/net/tcp");
                     return;
                 }
